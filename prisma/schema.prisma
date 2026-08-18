@@ -1,0 +1,74 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String         @id @default(uuid())
+  phone         String?        @unique
+  email         String?        @unique
+  googleId      String?        @unique
+  azureId       String?        @unique
+  role          String         @default("customer") // customer, lawyer, admin
+  walletBalance Float          @default(0.0)
+  name          String?
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  lawyerProfile         Lawyer?
+  consultationsAsClient Consultation[] @relation("ClientConsultations")
+  transactions          Transaction[]
+}
+
+model Lawyer {
+  id             String         @id @default(uuid())
+  userId         String         @unique
+  user           User           @relation(fields: [userId], references: [id])
+  specialization String[]
+  experience     Int
+  rating         Float          @default(0.0)
+  reviews        Int            @default(0)
+  hourlyRate     Float
+  bio            String?
+  location       String?
+  available      Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  consultations  Consultation[] @relation("LawyerConsultations")
+}
+
+model Consultation {
+  id            String   @id @default(uuid())
+  clientId      String
+  client        User     @relation("ClientConsultations", fields: [clientId], references: [id])
+  lawyerId      String
+  lawyer        Lawyer   @relation("LawyerConsultations", fields: [lawyerId], references: [id])
+  scheduledTime DateTime
+  status        String   @default("pending") // pending, confirmed, completed, cancelled
+  notes         String?
+  fee           Float?
+  paymentStatus String   @default("unpaid") // unpaid, paid, refunded
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Transaction {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  orderId   String
+  paymentId String?
+  signature String?
+  amount    Float
+  currency  String   @default("INR")
+  status    String   @default("created") // created, paid, failed
+  type      String   @default("credit") // credit, debit
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

@@ -1,7 +1,6 @@
 import crypto from 'crypto';
 import razorpayInstance from '../config/razorpay.js';
-import Transaction from '../models/Transaction.js';
-import User from '../models/User.js';
+import { prisma } from '../config/db.js';
 
 /**
  * @desc    Create Razorpay order
@@ -26,11 +25,13 @@ export const createOrder = async (req, res, next) => {
     const order = await razorpayInstance.orders.create(options);
 
     // Log transaction as created
-    await Transaction.create({
-      user: req.user._id,
-      orderId: order.id,
-      amount,
-      currency,
+    await prisma.transaction.create({
+      data: {
+        userId: req.user.id,
+        orderId: order.id,
+        amount,
+        currency,
+      }
     });
 
     res.status(200).json({
@@ -68,22 +69,29 @@ export const verifyPayment = async (req, res, next) => {
     const isAuthentic = expectedSignature === razorpay_signature;
 
     if (isAuthentic) {
-      // Update transaction status
-      const transaction = await Transaction.findOneAndUpdate(
-        { orderId: razorpay_order_id },
-        {
-          paymentId: razorpay_payment_id,
-          signature: razorpay_signature,
-          status: 'paid',
-        },
-        { new: true }
-      );
+      // Find the transaction by orderId
+      const transaction = await prisma.transaction.findFirst({
+        where: { orderId: razorpay_order_id }
+      });
 
       if (transaction) {
-        // Increment user's wallet balance
-        await User.findByIdAndUpdate(req.user._id, {
-          $inc: { walletBalance: transaction.amount }
-        });
+        // Run updates in transaction
+        await prisma.$transaction([
+          prisma.transaction.update({
+            where: { id: transaction.id },
+            data: {
+              paymentId: razorpay_payment_id,
+              signature: razorpay_signature,
+              status: 'paid',
+            }
+          }),
+          prisma.user.update({
+            where: { id: req.user.id },
+            data: {
+              walletBalance: { increment: transaction.amount }
+            }
+          })
+        ]);
       }
 
       res.status(200).json({
@@ -91,10 +99,11 @@ export const verifyPayment = async (req, res, next) => {
         message: 'Payment verified successfully',
       });
     } else {
-      await Transaction.findOneAndUpdate(
-        { orderId: razorpay_order_id },
-        { status: 'failed' }
-      );
+      // Update transaction status to failed
+      await prisma.transaction.updateMany({
+        where: { orderId: razorpay_order_id },
+        data: { status: 'failed' }
+      });
       
       res.status(400);
       throw new Error('Payment verification failed');
@@ -111,7 +120,10 @@ export const verifyPayment = async (req, res, next) => {
  */
 export const getHistory = async (req, res, next) => {
   try {
-    const transactions = await Transaction.find({ user: req.user._id }).sort({ createdAt: -1 });
+    const transactions = await prisma.transaction.findMany({
+      where: { userId: req.user.id },
+      orderBy: { createdAt: 'desc' }
+    });
     res.status(200).json(transactions);
   } catch (error) {
     next(error);

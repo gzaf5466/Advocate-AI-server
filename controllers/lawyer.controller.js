@@ -1,7 +1,4 @@
-import Lawyer from '../models/Lawyer.js';
-import Consultation from '../models/Consultation.js';
-import User from '../models/User.js';
-import Transaction from '../models/Transaction.js';
+import { prisma } from '../config/db.js';
 
 /**
  * @desc    Get all lawyers
@@ -10,17 +7,29 @@ import Transaction from '../models/Transaction.js';
  */
 export const getLawyers = async (req, res, next) => {
   try {
-    const keyword = req.query.keyword
-      ? {
-          $or: [
-            { specialization: { $regex: req.query.keyword, $options: 'i' } },
-            { location: { $regex: req.query.keyword, $options: 'i' } }
-          ]
-        }
-      : {};
+    const keyword = req.query.keyword ? String(req.query.keyword) : undefined;
+    
+    let whereClause = { available: true };
 
-    // In a real scenario, you'd populate user details like name/profile pic
-    const lawyers = await Lawyer.find({ ...keyword, available: true }).populate('user', 'name email phone');
+    if (keyword) {
+      whereClause.OR = [
+        { specialization: { has: keyword } },
+        { location: { contains: keyword, mode: 'insensitive' } }
+      ];
+    }
+
+    const lawyers = await prisma.lawyer.findMany({
+      where: whereClause,
+      include: {
+        user: {
+          select: {
+            name: true,
+            email: true,
+            phone: true
+          }
+        }
+      }
+    });
     
     res.json(lawyers);
   } catch (error) {
@@ -35,7 +44,18 @@ export const getLawyers = async (req, res, next) => {
  */
 export const getLawyerById = async (req, res, next) => {
   try {
-    const lawyer = await Lawyer.findById(req.params.id).populate('user', 'name email phone');
+    const lawyer = await prisma.lawyer.findUnique({
+      where: { id: req.params.id },
+      include: {
+        user: {
+          select: {
+            name: true,
+            email: true,
+            phone: true
+          }
+        }
+      }
+    });
 
     if (lawyer) {
       res.json(lawyer);
@@ -63,41 +83,49 @@ export const bookConsultation = async (req, res, next) => {
       throw new Error('Scheduled time is required');
     }
 
-    const lawyer = await Lawyer.findById(lawyerId);
+    const lawyer = await prisma.lawyer.findUnique({ where: { id: lawyerId } });
     if (!lawyer) {
       res.status(404);
       throw new Error('Lawyer not found');
     }
 
-    const user = await User.findById(req.user._id);
-    const consultationFee = lawyer.hourlyRate || 500; // Default fee if not specified
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    const consultationFee = lawyer.hourlyRate || 500.0;
 
     if (user.walletBalance < consultationFee) {
       res.status(400);
       throw new Error(`Insufficient wallet balance. Fee: ₹${consultationFee}, Current: ₹${user.walletBalance}`);
     }
 
-    // Deduct balance
-    user.walletBalance -= consultationFee;
-    await user.save();
-
-    // Create a debit transaction record
-    await Transaction.create({
-      user: req.user._id,
-      amount: consultationFee,
-      currency: 'INR',
-      status: 'paid',
-      type: 'debit', // I should check if Transaction model supports 'type'
-      orderId: `BOOK-${Math.floor(100000 + Math.random() * 900000)}`,
-    });
-
-    const consultation = await Consultation.create({
-      client: req.user._id,
-      lawyer: lawyerId,
-      scheduledTime,
-      notes,
-      fee: consultationFee,
-    });
+    // Execute multiple operations in a transaction
+    const [updatedUser, transaction, consultation] = await prisma.$transaction([
+      // 1. Deduct balance
+      prisma.user.update({
+        where: { id: user.id },
+        data: { walletBalance: { decrement: consultationFee } }
+      }),
+      // 2. Create debit transaction
+      prisma.transaction.create({
+        data: {
+          userId: user.id,
+          amount: consultationFee,
+          currency: 'INR',
+          status: 'paid',
+          type: 'debit',
+          orderId: `BOOK-${Math.floor(100000 + Math.random() * 900000)}`,
+        }
+      }),
+      // 3. Create consultation
+      prisma.consultation.create({
+        data: {
+          clientId: user.id,
+          lawyerId: lawyer.id,
+          scheduledTime: new Date(scheduledTime),
+          notes,
+          fee: consultationFee,
+        }
+      })
+    ]);
 
     res.status(201).json(consultation);
   } catch (error) {

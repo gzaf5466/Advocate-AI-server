@@ -1,4 +1,4 @@
-import User from '../models/User.js';
+import { prisma } from '../config/db.js';
 import generateToken from '../utils/generateToken.js';
 import { OAuth2Client } from 'google-auth-library';
 import axios from 'axios';
@@ -13,11 +13,13 @@ const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
  */
 export const getUserProfile = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user._id);
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id }
+    });
 
     if (user) {
       res.json({
-        _id: user._id,
+        id: user.id,
         phone: user.phone,
         name: user.name,
         email: user.email,
@@ -68,25 +70,36 @@ export const googleLogin = async (req, res, next) => {
     }
 
     // Check if user exists
-    let user = await User.findOne({ $or: [{ googleId }, { email }] });
+    let user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { googleId },
+          { email }
+        ]
+      }
+    });
 
     if (!user) {
-      user = await User.create({
-        googleId,
-        email,
-        name,
-        role: req.body.role || 'customer'
+      user = await prisma.user.create({
+        data: {
+          googleId,
+          email,
+          name,
+          role: req.body.role || 'customer'
+        }
       });
     } else if (!user.googleId) {
-      user.googleId = googleId;
-      await user.save();
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: { googleId }
+      });
     }
 
     res.status(200).json({
       success: true,
-      token: generateToken(user._id),
+      token: generateToken(user.id),
       user: {
-        _id: user._id,
+        id: user.id,
         email: user.email,
         name: user.name,
         role: user.role,
@@ -122,25 +135,36 @@ export const azureLogin = async (req, res, next) => {
     const email = userPrincipalName; // Usually the email
 
     // Check if user exists
-    let user = await User.findOne({ $or: [{ azureId }, { email }] });
+    let user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { azureId },
+          { email }
+        ]
+      }
+    });
 
     if (!user) {
-      user = await User.create({
-        azureId,
-        email,
-        name: displayName,
-        role: 'customer'
+      user = await prisma.user.create({
+        data: {
+          azureId,
+          email,
+          name: displayName,
+          role: 'customer'
+        }
       });
     } else if (!user.azureId) {
-      user.azureId = azureId;
-      await user.save();
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: { azureId }
+      });
     }
 
     res.status(200).json({
       success: true,
-      token: generateToken(user._id),
+      token: generateToken(user.id),
       user: {
-        _id: user._id,
+        id: user.id,
         email: user.email,
         name: user.name,
         role: user.role,
