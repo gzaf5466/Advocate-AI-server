@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
-import { detectMimeType, sanitizeFilename, inspectZipBomb, calculateSHA256, SECURITY_CONFIG } from './uploadSecurity.js';
+import { detectMimeType, sanitizeFilename, calculateSHA256, SECURITY_CONFIG } from './uploadSecurity.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -25,18 +25,13 @@ export async function storeUploadedFileBuffer({ buffer, originalName, userId = '
   // 1. Sanitize filename
   const cleanOriginalName = sanitizeFilename(originalName);
 
-  // 2. Validate magic bytes & true MIME type
+  // 2. Validate magic bytes & true MIME type (Allowlist check)
   const { mime, ext } = detectMimeType(buffer, cleanOriginalName);
 
-  // 3. Inspect ZIP bomb risks if ZIP format
-  if (mime === 'application/zip') {
-    inspectZipBomb(buffer);
-  }
-
-  // 4. Calculate SHA-256 Hash
+  // 3. Calculate SHA-256 Hash
   const sha256Hash = calculateSHA256(buffer);
 
-  // 5. Generate organized directory path: storage/vault/YYYY/MM/userId/
+  // 4. Generate organized directory path: storage/vault/YYYY/MM/userId/
   const now = new Date();
   const year = now.getFullYear().toString();
   const month = (now.getMonth() + 1).toString().padStart(2, '0');
@@ -46,12 +41,12 @@ export async function storeUploadedFileBuffer({ buffer, originalName, userId = '
     fs.mkdirSync(targetDir, { recursive: true });
   }
 
-  // 6. Generate random UUID filename to prevent collisions & path attacks
+  // 5. Generate random UUID filename to prevent collisions & path attacks
   const fileUuid = crypto.randomUUID();
   const storedFilename = `${fileUuid}.${ext}`;
   const absoluteFilePath = path.join(targetDir, storedFilename);
 
-  // 7. Write file to disk outside web root
+  // 6. Write file to disk outside web root
   fs.writeFileSync(absoluteFilePath, buffer);
 
   return {
