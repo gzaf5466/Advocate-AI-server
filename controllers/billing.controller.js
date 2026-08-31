@@ -129,3 +129,22 @@ export const getHistory = async (req, res, next) => {
     next(error);
   }
 };
+
+/**
+ * @desc    Get user wallet balance
+ * @route   GET /api/billing/wallet
+ * @access  Private
+ */
+export const getWalletBalance = async (req, res, next) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { walletBalance: true }
+    });
+    res.status(200).json({ walletBalance: user?.walletBalance || 0 });
+  } catch (error) {
+    next(error);
+  }
+};
+
+

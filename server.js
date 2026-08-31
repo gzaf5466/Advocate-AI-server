@@ -1,5 +1,5 @@
+import 'dotenv/config';
 import express from 'express';
-import dotenv from 'dotenv';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -7,8 +7,6 @@ import rateLimit from 'express-rate-limit';
 import connectDB from './config/db.js';
 import { errorHandler, notFound } from './middlewares/error.js';
 
-// Load env vars
-dotenv.config();
 
 // Connect to Database
 connectDB();
@@ -36,10 +34,18 @@ app.get('/api/health', (req, res) => {
 import authRoutes from './routes/auth.routes.js';
 import lawyerRoutes from './routes/lawyer.routes.js';
 import billingRoutes from './routes/billing.routes.js';
+import otpRoutes from './routes/otp.routes.js';
+import vaultRoutes from './routes/vault.routes.js';
+import consultationRoutes from './routes/consultation.routes.js';
+import caseRoutes from './routes/case.routes.js';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/lawyers', lawyerRoutes);
 app.use('/api/billing', billingRoutes);
+app.use('/api/otp', otpRoutes);
+app.use('/api/vault', vaultRoutes);
+app.use('/api/consultations', consultationRoutes);
+app.use('/api/cases', caseRoutes);
 
 // Error Handling Middlewares
 app.use(notFound);
